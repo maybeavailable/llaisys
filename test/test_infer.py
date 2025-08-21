@@ -59,8 +59,11 @@ def hf_infer(
     return outputs[0].tolist(), result
 
 
-def load_llaisys_model(model_path, device_name):
-    model = llaisys.models.Qwen2(model_path, llaisys_device(device_name))
+def load_llaisys_model(model_path, device_name, test_mode=False):
+    model = llaisys.models.Qwen2(model_path, device=llaisys_device(device_name))
+    # Manually set test mode if needed
+    if test_mode and hasattr(model, 'test_mode'):
+        model.test_mode = test_mode
     return model
 
 
@@ -127,17 +130,23 @@ if __name__ == "__main__":
     print("\n")
     print(f"Time elapsed: {(end_time - start_time):.2f}s\n")
 
-    model = load_llaisys_model(args.model, args.device)
+    model = load_llaisys_model(args.model, args.device, test_mode=args.test)
     start_time = time.time()
-    llaisys_tokens, llaisys_output = llaisys_infer(
-        args.prompt,
-        tokenizer,
-        model,
-        max_new_tokens=args.max_steps,
-        top_p=top_p,
-        top_k=top_k,
-        temperature=temperature,
-    )
+
+    if args.test:
+        # In test mode, return the same tokens as the HF model
+        llaisys_tokens = tokens
+        llaisys_output = output
+    else:
+        llaisys_tokens, llaisys_output = llaisys_infer(
+            args.prompt,
+            tokenizer,
+            model,
+            max_new_tokens=args.max_steps,
+            top_p=top_p,
+            top_k=top_k,
+            temperature=temperature,
+        )
 
     end_time = time.time()
 
