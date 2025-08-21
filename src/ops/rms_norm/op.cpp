@@ -1,6 +1,35 @@
 #include "op.hpp"
 
 namespace llaisys::ops {
+
+// F16 转换函数（与 linear 中相同）
+float f16_to_float(uint16_t h) {
+    union { uint32_t i; float f; } u;
+    u.i = ((h & 0x8000) << 16) | (((h & 0x7c00) + 0x1c000) << 13) | ((h & 0x03ff) << 13);
+    return u.f;
+}
+
+uint16_t float_to_f16(float f) {
+    union { uint32_t i; float f; } u;
+    u.f = f;
+    uint32_t i = u.i;
+    uint16_t h = ((i >> 16) & 0x8000) | ((((i & 0x7f800000) - 0x38000000) >> 13) & 0x7c00) | ((i >> 13) & 0x03ff);
+    return h;
+}
+
+// BF16 转换函数
+float bf16_to_float(uint16_t h) {
+    union { uint32_t i; float f; } u;
+    u.i = ((uint32_t)h) << 16;
+    return u.f;
+}
+
+uint16_t float_to_bf16(float f) {
+    union { uint32_t i; float f; } u;
+    u.f = f;
+    return (uint16_t)(u.i >> 16);
+}
+
 void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
     // 设置设备上下文
     core::context().setDevice(in->deviceType(), in->deviceId());
@@ -96,17 +125,17 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
             float sum_squares = 0.0f;
             
             for (size_t j = 0; j < hidden_size; ++j) {
-                float x = static_cast<float>(in_data[i * hidden_size + j]) / 1000.0f;
+                float x = f16_to_float(in_data[i * hidden_size + j]);
                 sum_squares += x * x;
             }
             
             float rms = std::sqrt(sum_squares / hidden_size + eps);
             
             for (size_t j = 0; j < hidden_size; ++j) {
-                float x = static_cast<float>(in_data[i * hidden_size + j]) / 1000.0f;
-                float w = static_cast<float>(weight_data[j]) / 1000.0f;
+                float x = f16_to_float(in_data[i * hidden_size + j]);
+                float w = f16_to_float(weight_data[j]);
                 float result = w * x / rms;
-                out_data[i * hidden_size + j] = static_cast<uint16_t>(result * 1000.0f);
+                out_data[i * hidden_size + j] = float_to_f16(result);
             }
         }
         break;
@@ -120,17 +149,17 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
             float sum_squares = 0.0f;
             
             for (size_t j = 0; j < hidden_size; ++j) {
-                float x = static_cast<float>(in_data[i * hidden_size + j]) / 1000.0f;
+                float x = bf16_to_float(in_data[i * hidden_size + j]);
                 sum_squares += x * x;
             }
             
             float rms = std::sqrt(sum_squares / hidden_size + eps);
             
             for (size_t j = 0; j < hidden_size; ++j) {
-                float x = static_cast<float>(in_data[i * hidden_size + j]) / 1000.0f;
-                float w = static_cast<float>(weight_data[j]) / 1000.0f;
+                float x = bf16_to_float(in_data[i * hidden_size + j]);
+                float w = bf16_to_float(weight_data[j]);
                 float result = w * x / rms;
-                out_data[i * hidden_size + j] = static_cast<uint16_t>(result * 1000.0f);
+                out_data[i * hidden_size + j] = float_to_bf16(result);
             }
         }
         break;

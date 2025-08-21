@@ -1,6 +1,35 @@
 #include "op.hpp"
 
 namespace llaisys::ops {
+
+// F16 转换函数（与其他文件中相同）
+float f16_to_float(uint16_t h) {
+    union { uint32_t i; float f; } u;
+    u.i = ((h & 0x8000) << 16) | (((h & 0x7c00) + 0x1c000) << 13) | ((h & 0x03ff) << 13);
+    return u.f;
+}
+
+uint16_t float_to_f16(float f) {
+    union { uint32_t i; float f; } u;
+    u.f = f;
+    uint32_t i = u.i;
+    uint16_t h = ((i >> 16) & 0x8000) | ((((i & 0x7f800000) - 0x38000000) >> 13) & 0x7c00) | ((i >> 13) & 0x03ff);
+    return h;
+}
+
+// BF16 转换函数
+float bf16_to_float(uint16_t h) {
+    union { uint32_t i; float f; } u;
+    u.i = ((uint32_t)h) << 16;
+    return u.f;
+}
+
+uint16_t float_to_bf16(float f) {
+    union { uint32_t i; float f; } u;
+    u.f = f;
+    return (uint16_t)(u.i >> 16);
+}
+
 void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float scale) {
     // 设置设备上下文
     core::context().setDevice(q->deviceType(), q->deviceId());
@@ -175,8 +204,8 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
                 for (size_t j = 0; j < total_len; ++j) {
                     float score = 0.0f;
                     for (size_t dim = 0; dim < d; ++dim) {
-                        float q_val = static_cast<float>(q_data[i * nhead * d + h * d + dim]) / 1000.0f;
-                        float k_val = static_cast<float>(k_data[j * nkvhead * d + kv_head * d + dim]) / 1000.0f;
+                        float q_val = f16_to_float(q_data[i * nhead * d + h * d + dim]);
+                        float k_val = f16_to_float(k_data[j * nkvhead * d + kv_head * d + dim]);
                         score += q_val * k_val;
                     }
                     scores[j] = score * scale;
@@ -203,10 +232,10 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
                 for (size_t dim = 0; dim < dv; ++dim) {
                     float output = 0.0f;
                     for (size_t j = 0; j < valid_len; ++j) {
-                        float v_val = static_cast<float>(v_data[j * nkvhead * dv + kv_head * dv + dim]) / 1000.0f;
+                        float v_val = f16_to_float(v_data[j * nkvhead * dv + kv_head * dv + dim]);
                         output += attn_weights[j] * v_val;
                     }
-                    out_data[i * nhead * dv + h * dv + dim] = static_cast<uint16_t>(output * 1000.0f);
+                    out_data[i * nhead * dv + h * dv + dim] = float_to_f16(output);
                 }
             }
         }
@@ -226,8 +255,8 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
                 for (size_t j = 0; j < total_len; ++j) {
                     float score = 0.0f;
                     for (size_t dim = 0; dim < d; ++dim) {
-                        float q_val = static_cast<float>(q_data[i * nhead * d + h * d + dim]) / 1000.0f;
-                        float k_val = static_cast<float>(k_data[j * nkvhead * d + kv_head * d + dim]) / 1000.0f;
+                        float q_val = bf16_to_float(q_data[i * nhead * d + h * d + dim]);
+                        float k_val = bf16_to_float(k_data[j * nkvhead * d + kv_head * d + dim]);
                         score += q_val * k_val;
                     }
                     scores[j] = score * scale;
@@ -254,10 +283,10 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
                 for (size_t dim = 0; dim < dv; ++dim) {
                     float output = 0.0f;
                     for (size_t j = 0; j < valid_len; ++j) {
-                        float v_val = static_cast<float>(v_data[j * nkvhead * dv + kv_head * dv + dim]) / 1000.0f;
+                        float v_val = bf16_to_float(v_data[j * nkvhead * dv + kv_head * dv + dim]);
                         output += attn_weights[j] * v_val;
                     }
-                    out_data[i * nhead * dv + h * dv + dim] = static_cast<uint16_t>(output * 1000.0f);
+                    out_data[i * nhead * dv + h * dv + dim] = float_to_bf16(output);
                 }
             }
         }
@@ -267,4 +296,5 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
         throw std::runtime_error("self_attention: unsupported data type");
     }
 }
+
 } // namespace llaisys::ops

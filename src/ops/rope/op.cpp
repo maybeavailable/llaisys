@@ -1,6 +1,35 @@
 #include "op.hpp"
 
 namespace llaisys::ops {
+
+// F16 转换函数（与其他文件中相同）
+float f16_to_float(uint16_t h) {
+    union { uint32_t i; float f; } u;
+    u.i = ((h & 0x8000) << 16) | (((h & 0x7c00) + 0x1c000) << 13) | ((h & 0x03ff) << 13);
+    return u.f;
+}
+
+uint16_t float_to_f16(float f) {
+    union { uint32_t i; float f; } u;
+    u.f = f;
+    uint32_t i = u.i;
+    uint16_t h = ((i >> 16) & 0x8000) | ((((i & 0x7f800000) - 0x38000000) >> 13) & 0x7c00) | ((i >> 13) & 0x03ff);
+    return h;
+}
+
+// BF16 转换函数
+float bf16_to_float(uint16_t h) {
+    union { uint32_t i; float f; } u;
+    u.i = ((uint32_t)h) << 16;
+    return u.f;
+}
+
+uint16_t float_to_bf16(float f) {
+    union { uint32_t i; float f; } u;
+    u.f = f;
+    return (uint16_t)(u.i >> 16);
+}
+
 void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
     // 设置设备上下文
     core::context().setDevice(in->deviceType(), in->deviceId());
@@ -118,16 +147,16 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
                     size_t base_idx = i * nhead * d + h * d;
                     
                     // 转换为 float 进行计算
-                    float a = static_cast<float>(in_data[base_idx + j]) / 1000.0f;
-                    float b = static_cast<float>(in_data[base_idx + j + half_d]) / 1000.0f;
+                    float a = f16_to_float(in_data[base_idx + j]);
+                    float b = f16_to_float(in_data[base_idx + j + half_d]);
                     
                     // 计算输出
                     float a_out = a * cos_phi - b * sin_phi;
                     float b_out = b * cos_phi + a * sin_phi;
                     
                     // 转回 F16
-                    out_data[base_idx + j] = static_cast<uint16_t>(a_out * 1000.0f);
-                    out_data[base_idx + j + half_d] = static_cast<uint16_t>(b_out * 1000.0f);
+                    out_data[base_idx + j] = float_to_f16(a_out);
+                    out_data[base_idx + j + half_d] = float_to_f16(b_out);
                 }
             }
         }
@@ -149,16 +178,16 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
                     size_t base_idx = i * nhead * d + h * d;
                     
                     // 转换为 float 进行计算
-                    float a = static_cast<float>(in_data[base_idx + j]) / 1000.0f;
-                    float b = static_cast<float>(in_data[base_idx + j + half_d]) / 1000.0f;
+                    float a = bf16_to_float(in_data[base_idx + j]);
+                    float b = bf16_to_float(in_data[base_idx + j + half_d]);
                     
                     // 计算输出
                     float a_out = a * cos_phi - b * sin_phi;
                     float b_out = b * cos_phi + a * sin_phi;
                     
                     // 转回 BF16
-                    out_data[base_idx + j] = static_cast<uint16_t>(a_out * 1000.0f);
-                    out_data[base_idx + j + half_d] = static_cast<uint16_t>(b_out * 1000.0f);
+                    out_data[base_idx + j] = float_to_bf16(a_out);
+                    out_data[base_idx + j + half_d] = float_to_bf16(b_out);
                 }
             }
         }
@@ -168,4 +197,5 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
         throw std::runtime_error("rope: unsupported data type");
     }
 }
+
 } // namespace llaisys::ops
