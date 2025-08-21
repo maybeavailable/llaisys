@@ -1,5 +1,5 @@
 import ctypes
-from typing import Optional, Pointer
+from typing import Optional
 from .llaisys_types import llaisysDataType_t, llaisysDeviceType_t
 from .tensor import llaisysTensor_t
 

@@ -1,8 +1,8 @@
 #include "llaisys/models/qwen2.h"
 #include "llaisys/ops.h"
 #include "llaisys/runtime.h"
-#include "tensor/tensor.hpp"
-#include "core/context/context.hpp"
+#include "../../tensor/tensor.hpp"
+#include "../../core/context/context.hpp"
 #include <memory>
 #include <vector>
 #include <cstring>

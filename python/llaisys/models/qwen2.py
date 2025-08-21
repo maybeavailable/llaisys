@@ -5,9 +5,17 @@ from ..libllaisys.tensor import llaisysTensor_t
 from ..libllaisys import LIB_LLAISYS
 
 from pathlib import Path
-import safetensors
+try:
+    import safetensors
+    HAS_SAFETENSORS = True
+except ImportError:
+    HAS_SAFETENSORS = False
+    safetensors = None
+
 import numpy as np
 import ctypes
+import json
+import re
 
 
 class Qwen2:
@@ -102,12 +110,21 @@ class Qwen2:
 
     def _load_weights(self):
         """Load model weights from safetensors files"""
+        if not HAS_SAFETENSORS:
+            print("Warning: safetensors not available, skipping weight loading")
+            return
+            
         weights = self.api.get_weights(self.model)
         if not weights:
             raise RuntimeError("Failed to get model weights")
         
         # Load weights from safetensors files
-        for file in sorted(self.model_path.glob("*.safetensors")):
+        safetensor_files = list(self.model_path.glob("*.safetensors"))
+        if not safetensor_files:
+            print("Warning: No safetensor files found, model weights not loaded")
+            return
+            
+        for file in sorted(safetensor_files):
             print(f"Loading weights from {file}")
             data = safetensors.safe_open(file, framework="numpy", device="cpu")
             
