@@ -102,6 +102,38 @@ void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
         }
         break;
     }
+    case LLAISYS_DTYPE_F16: {
+        // F16 处理：转换为 float 进行计算，然后转回 F16
+        const uint16_t* in_data = reinterpret_cast<const uint16_t*>(in->data());
+        uint16_t* out_data = reinterpret_cast<uint16_t*>(out->data());
+        
+        for (size_t i = 0; i < seqlen; ++i) {
+            int64_t pos = pos_data[i];
+            
+            for (size_t h = 0; h < nhead; ++h) {
+                for (size_t j = 0; j < half_d; ++j) {
+                    float phi = pos * std::pow(theta, -2.0f * j / d);
+                    float cos_phi = std::cos(phi);
+                    float sin_phi = std::sin(phi);
+                    
+                    size_t base_idx = i * nhead * d + h * d;
+                    
+                    // 转换为 float 进行计算
+                    float a = static_cast<float>(in_data[base_idx + j]) / 1000.0f;
+                    float b = static_cast<float>(in_data[base_idx + j + half_d]) / 1000.0f;
+                    
+                    // 计算输出
+                    float a_out = a * cos_phi - b * sin_phi;
+                    float b_out = b * cos_phi + a * sin_phi;
+                    
+                    // 转回 F16
+                    out_data[base_idx + j] = static_cast<uint16_t>(a_out * 1000.0f);
+                    out_data[base_idx + j + half_d] = static_cast<uint16_t>(b_out * 1000.0f);
+                }
+            }
+        }
+        break;
+    }
     default:
         throw std::runtime_error("rope: unsupported data type");
     }

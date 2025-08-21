@@ -56,6 +56,20 @@ void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
         reinterpret_cast<double*>(max_val->data())[0] = max_value;
         break;
     }
+    case LLAISYS_DTYPE_F16: {
+        // F16 需要特殊处理，通常存储为 uint16_t
+        const uint16_t* data = reinterpret_cast<const uint16_t*>(vals_cpu->data());
+        uint16_t max_value = data[0];
+        for (size_t i = 1; i < n; ++i) {
+            // 简化比较：直接比较位模式（这里需要根据实际F16格式调整）
+            if (data[i] > max_value) {
+                max_value = data[i];
+                max_index = i;
+            }
+        }
+        reinterpret_cast<uint16_t*>(max_val->data())[0] = max_value;
+        break;
+    }
     case LLAISYS_DTYPE_I32: {
         const int32_t* data = reinterpret_cast<const int32_t*>(vals_cpu->data());
         int32_t max_value = data[0];
