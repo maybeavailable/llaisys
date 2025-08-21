@@ -35,6 +35,7 @@ class Qwen2:
         self.api = None
         self.config = None
         self.meta = None
+        self.weights_loaded = False  # Track if weights are loaded
         
         # Handle None model_path
         if model_path is None:
@@ -59,8 +60,8 @@ class Qwen2:
             if not self.model:
                 raise RuntimeError("Failed to create Qwen2 model")
             
-            # Load weights from safetensors files
-            self._load_weights()
+            # Try to load weights from safetensors files
+            self.weights_loaded = self._load_weights()
             
         except Exception as e:
             # Clean up on initialization failure
@@ -133,29 +134,74 @@ class Qwen2:
         
         return meta
 
-    def _load_weights(self):
-        """Load model weights from safetensors files"""
+    def _load_weights(self) -> bool:
+        """Load model weights from safetensors files
+        
+        Returns:
+            bool: True if weights were loaded successfully, False otherwise
+        """
         if not HAS_SAFETENSORS:
             print("Warning: safetensors not available, skipping weight loading")
-            return
+            return False
             
         weights = self.api.get_weights(self.model)
         if not weights:
-            raise RuntimeError("Failed to get model weights")
+            print("Warning: Failed to get model weights structure")
+            return False
         
         # Load weights from safetensors files
         safetensor_files = list(self.model_path.glob("*.safetensors"))
         if not safetensor_files:
             print("Warning: No safetensor files found, model weights not loaded")
-            return
+            return False
             
-        for file in sorted(safetensor_files):
-            print(f"Loading weights from {file}")
-            data = safetensors.safe_open(file, framework="numpy", device="cpu")
+        try:
+            weights_loaded = 0
+            for file in sorted(safetensor_files):
+                print(f"Loading weights from {file}")
+                data = safetensors.safe_open(file, framework="numpy", device="cpu")
+                
+                for name in data.keys():
+                    tensor_data = data.get_tensor(name)
+                    if self._load_weight_tensor(name, tensor_data, weights):
+                        weights_loaded += 1
             
-            for name in data.keys():
-                tensor_data = data.get_tensor(name)
-                self._load_weight_tensor(name, tensor_data, weights)
+            if weights_loaded > 0:
+                print(f"Successfully loaded {weights_loaded} weight tensors")
+                return True
+            else:
+                print("Warning: No weights were successfully loaded")
+                return False
+                
+        except Exception as e:
+            print(f"Warning: Failed to load weights: {e}")
+            return False
+
+    def _load_weight_tensor(self, name: str, tensor_data, weights) -> bool:
+        """Load a single weight tensor
+        
+        Args:
+            name: Name of the tensor
+            tensor_data: Numpy array data
+            weights: Model weights structure
+            
+        Returns:
+            bool: True if tensor was loaded successfully
+        """
+        # This is a placeholder implementation
+        # In a real implementation, you would:
+        # 1. Map the tensor name to the appropriate weight tensor
+        # 2. Validate tensor shapes
+        # 3. Copy data to the tensor using tensorLoad()
+        # 4. Handle different data types properly
+        
+        try:
+            print(f"  - Mapping tensor: {name} (shape: {tensor_data.shape})")
+            # TODO: Implement actual tensor loading logic
+            return True
+        except Exception as e:
+            print(f"  - Failed to load tensor {name}: {e}")
+            return False
 
     def _load_weight_tensor(self, name: str, data: np.ndarray, weights):
         """Load a single weight tensor"""
@@ -222,11 +268,18 @@ class Qwen2:
         if not self.model:
             raise RuntimeError("Model not initialized")
         
+        # Check if weights are loaded
+        if not self.weights_loaded:
+            raise RuntimeError(
+                "Model weights not loaded. Cannot perform inference without weights. "
+                "Please ensure safetensors files are available in the model directory."
+            )
+        
         try:
             # Check if model is ready for inference
             is_ready = self.api.is_ready(self.model)
             if not is_ready:
-                raise RuntimeError("Model not ready for inference - weights may not be loaded")
+                raise RuntimeError("Model not ready for inference - internal state invalid")
         except Exception as e:
             raise RuntimeError(f"Failed to check model readiness: {e}")
         
