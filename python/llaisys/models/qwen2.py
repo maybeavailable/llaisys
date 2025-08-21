@@ -21,34 +21,60 @@ import re
 class Qwen2:
     """Qwen2 Transformer model implementation"""
 
-    def __init__(self, model_path: str, device: DeviceType = DeviceType.CPU, device_ids: list = None):
+    def __init__(self, model_path: Optional[str] = None, device: DeviceType = DeviceType.CPU, device_ids: list = None):
         """
         Initialize Qwen2 model
         
         Args:
-            model_path: Path to model directory containing config.json and safetensors files
+            model_path: Path to model directory containing config.json and safetensors files (optional)
             device: Device type (CPU or NVIDIA)
             device_ids: List of device IDs to use for multi-device setup
         """
-        self.model_path = Path(model_path)
+        # Initialize attributes first to avoid AttributeError in __del__
+        self.model: Optional[LlaisysQwen2Model_p] = None
+        self.api = None
+        self.config = None
+        self.meta = None
+        
+        # Handle None model_path
+        if model_path is None:
+            self.model_path = Path("./model")  # Default path
+        else:
+            self.model_path = Path(model_path)
+            
         self.device = device
         self.device_ids = device_ids or [0]
-        self.model: Optional[LlaisysQwen2Model_p] = None
-        self.api = get_qwen2_api()
         
-        # Load model configuration
-        self.config = self._load_config()
-        
-        # Create model meta from config
-        self.meta = self._create_meta_from_config()
-        
-        # Create the model
-        self.model = self.api.create_model(self.meta, int(device), self.device_ids)
-        if not self.model:
-            raise RuntimeError("Failed to create Qwen2 model")
-        
-        # Load weights from safetensors files
-        self._load_weights()
+        try:
+            self.api = get_qwen2_api()
+            
+            # Load model configuration
+            self.config = self._load_config()
+            
+            # Create model meta from config
+            self.meta = self._create_meta_from_config()
+            
+            # Create the model
+            self.model = self.api.create_model(self.meta, int(device), self.device_ids)
+            if not self.model:
+                raise RuntimeError("Failed to create Qwen2 model")
+            
+            # Load weights from safetensors files
+            self._load_weights()
+            
+        except Exception as e:
+            # Clean up on initialization failure
+            self._cleanup()
+            raise RuntimeError(f"Failed to initialize Qwen2 model: {e}") from e
+
+    def _cleanup(self):
+        """Clean up resources"""
+        if hasattr(self, 'model') and self.model and hasattr(self, 'api') and self.api:
+            try:
+                self.api.destroy_model(self.model)
+            except Exception:
+                pass  # Ignore cleanup errors
+        self.model = None
 
     def _load_config(self) -> Dict[str, Any]:
         """Load model configuration from config.json"""
@@ -69,7 +95,6 @@ class Qwen2:
                 "torch_dtype": "bfloat16"
             }
         
-        import json
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
@@ -216,6 +241,4 @@ class Qwen2:
 
     def __del__(self):
         """Cleanup model resources"""
-        if self.model:
-            self.api.destroy_model(self.model)
-            self.model = None
+        self._cleanup()
