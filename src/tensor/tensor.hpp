@@ -17,9 +17,10 @@ private:
     TensorMeta _meta;
     core::storage_t _storage;
     size_t _offset;
-    Tensor(TensorMeta meta, core::storage_t storage, size_t offset = 0);
+    
 
 public:
+    Tensor(TensorMeta meta, core::storage_t storage, size_t offset = 0);
     static tensor_t create(
         const std::vector<size_t> &shape,
         llaisysDataType_t dtype,

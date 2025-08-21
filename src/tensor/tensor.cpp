@@ -224,7 +224,7 @@ tensor_t Tensor::view(const std::vector<size_t> &shape) const {
         stride *= shape[i];
     }
     TensorMeta new_meta{_meta.dtype, shape, new_strides};
-    return create(new_meta, _storage, _offset);
+    return std::make_shared<Tensor>(new_meta, _storage, _offset);
 }
 
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
