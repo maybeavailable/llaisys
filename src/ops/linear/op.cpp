@@ -1,118 +1,159 @@
 #include "op.hpp"
 
 namespace llaisys::ops {
-void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
+void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
     // 设置设备上下文
-    core::context().setDevice(vals->deviceType(), vals->deviceId());
+    core::context().setDevice(in->deviceType(), in->deviceId());
     
     // 检查输入参数
-    if (vals->ndim() != 1) {
-        throw std::runtime_error("argmax: vals must be 1D tensor");
+    if (in->ndim() != 2) {
+        throw std::runtime_error("linear: input must be 2D tensor");
     }
-    if (max_idx->ndim() != 1 || max_idx->numel() != 1) {
-        throw std::runtime_error("argmax: max_idx must be 1D tensor with single element");
+    if (weight->ndim() != 2) {
+        throw std::runtime_error("linear: weight must be 2D tensor");
     }
-    if (max_val->ndim() != 1 || max_val->numel() != 1) {
-        throw std::runtime_error("argmax: max_val must be 1D tensor with single element");
-    }
-    
-    size_t n = vals->numel();
-    if (n == 0) {
-        throw std::runtime_error("argmax: vals tensor is empty");
+    if (out->ndim() != 2) {
+        throw std::runtime_error("linear: output must be 2D tensor");
     }
     
-    // 如果在设备上，需要先拷贝到CPU进行计算
-    tensor_t vals_cpu = vals;
-    if (vals->deviceType() != LLAISYS_DEVICE_CPU) {
-        vals_cpu = vals->to(LLAISYS_DEVICE_CPU, 0);
+    size_t batch_size = in->shape()[0];
+    size_t in_features = in->shape()[1];
+    size_t out_features = weight->shape()[0];
+    
+    // 检查维度匹配
+    if (weight->shape()[1] != in_features) {
+        throw std::runtime_error("linear: input features and weight input features mismatch");
+    }
+    if (out->shape()[0] != batch_size || out->shape()[1] != out_features) {
+        throw std::runtime_error("linear: output shape mismatch");
     }
     
-    // 根据数据类型进行argmax计算
-    size_t max_index = 0;
+    // 检查数据类型一致性
+    if (in->dtype() != weight->dtype() || in->dtype() != out->dtype()) {
+        throw std::runtime_error("linear: all tensors must have same dtype");
+    }
     
-    switch (vals->dtype()) {
+    // 检查bias
+    if (bias && bias->ndim() != 1) {
+        throw std::runtime_error("linear: bias must be 1D tensor");
+    }
+    if (bias && bias->shape()[0] != out_features) {
+        throw std::runtime_error("linear: bias size mismatch");
+    }
+    if (bias && bias->dtype() != in->dtype()) {
+        throw std::runtime_error("linear: bias dtype mismatch");
+    }
+    
+    // 检查张量连续性
+    if (!in->isContiguous() || !weight->isContiguous() || !out->isContiguous()) {
+        throw std::runtime_error("linear: all tensors must be contiguous");
+    }
+    
+    // 根据数据类型进行计算
+    switch (in->dtype()) {
     case LLAISYS_DTYPE_F32: {
-        const float* data = reinterpret_cast<const float*>(vals_cpu->data());
-        float max_value = data[0];
-        for (size_t i = 1; i < n; ++i) {
-            if (data[i] > max_value) {
-                max_value = data[i];
-                max_index = i;
+        const float* in_data = reinterpret_cast<const float*>(in->data());
+        const float* weight_data = reinterpret_cast<const float*>(weight->data());
+        const float* bias_data = bias ? reinterpret_cast<const float*>(bias->data()) : nullptr;
+        float* out_data = reinterpret_cast<float*>(out->data());
+        
+        // 计算 Y = X * W^T + b
+        for (size_t i = 0; i < batch_size; ++i) {
+            for (size_t j = 0; j < out_features; ++j) {
+                float sum = 0.0f;
+                
+                // 矩阵乘法：X[i,:] * W[j,:]
+                for (size_t k = 0; k < in_features; ++k) {
+                    sum += in_data[i * in_features + k] * weight_data[j * in_features + k];
+                }
+                
+                // 加偏置
+                if (bias_data) {
+                    sum += bias_data[j];
+                }
+                
+                out_data[i * out_features + j] = sum;
             }
         }
-        // 写入结果
-        reinterpret_cast<float*>(max_val->data())[0] = max_value;
         break;
     }
     case LLAISYS_DTYPE_F64: {
-        const double* data = reinterpret_cast<const double*>(vals_cpu->data());
-        double max_value = data[0];
-        for (size_t i = 1; i < n; ++i) {
-            if (data[i] > max_value) {
-                max_value = data[i];
-                max_index = i;
+        const double* in_data = reinterpret_cast<const double*>(in->data());
+        const double* weight_data = reinterpret_cast<const double*>(weight->data());
+        const double* bias_data = bias ? reinterpret_cast<const double*>(bias->data()) : nullptr;
+        double* out_data = reinterpret_cast<double*>(out->data());
+        
+        for (size_t i = 0; i < batch_size; ++i) {
+            for (size_t j = 0; j < out_features; ++j) {
+                double sum = 0.0;
+                
+                for (size_t k = 0; k < in_features; ++k) {
+                    sum += in_data[i * in_features + k] * weight_data[j * in_features + k];
+                }
+                
+                if (bias_data) {
+                    sum += bias_data[j];
+                }
+                
+                out_data[i * out_features + j] = sum;
             }
         }
-        reinterpret_cast<double*>(max_val->data())[0] = max_value;
         break;
     }
     case LLAISYS_DTYPE_F16: {
-        // F16 需要特殊处理，通常存储为 uint16_t
-        const uint16_t* data = reinterpret_cast<const uint16_t*>(vals_cpu->data());
-        uint16_t max_value = data[0];
-        for (size_t i = 1; i < n; ++i) {
-            // 简化比较：直接比较位模式（这里需要根据实际F16格式调整）
-            if (data[i] > max_value) {
-                max_value = data[i];
-                max_index = i;
+        const uint16_t* in_data = reinterpret_cast<const uint16_t*>(in->data());
+        const uint16_t* weight_data = reinterpret_cast<const uint16_t*>(weight->data());
+        const uint16_t* bias_data = bias ? reinterpret_cast<const uint16_t*>(bias->data()) : nullptr;
+        uint16_t* out_data = reinterpret_cast<uint16_t*>(out->data());
+        
+        for (size_t i = 0; i < batch_size; ++i) {
+            for (size_t j = 0; j < out_features; ++j) {
+                float sum = 0.0f;
+                
+                for (size_t k = 0; k < in_features; ++k) {
+                    float in_val = static_cast<float>(in_data[i * in_features + k]) / 1000.0f;
+                    float weight_val = static_cast<float>(weight_data[j * in_features + k]) / 1000.0f;
+                    sum += in_val * weight_val;
+                }
+                
+                if (bias_data) {
+                    float bias_val = static_cast<float>(bias_data[j]) / 1000.0f;
+                    sum += bias_val;
+                }
+                
+                out_data[i * out_features + j] = static_cast<uint16_t>(sum * 1000.0f);
             }
         }
-        reinterpret_cast<uint16_t*>(max_val->data())[0] = max_value;
         break;
     }
     case LLAISYS_DTYPE_BF16: {
-        // BF16 也存储为 uint16_t，但格式与F16不同
-        const uint16_t* data = reinterpret_cast<const uint16_t*>(vals_cpu->data());
-        uint16_t max_value = data[0];
-        for (size_t i = 1; i < n; ++i) {
-            // 简化比较：直接比较位模式
-            if (data[i] > max_value) {
-                max_value = data[i];
-                max_index = i;
+        const uint16_t* in_data = reinterpret_cast<const uint16_t*>(in->data());
+        const uint16_t* weight_data = reinterpret_cast<const uint16_t*>(weight->data());
+        const uint16_t* bias_data = bias ? reinterpret_cast<const uint16_t*>(bias->data()) : nullptr;
+        uint16_t* out_data = reinterpret_cast<uint16_t*>(out->data());
+        
+        for (size_t i = 0; i < batch_size; ++i) {
+            for (size_t j = 0; j < out_features; ++j) {
+                float sum = 0.0f;
+                
+                for (size_t k = 0; k < in_features; ++k) {
+                    float in_val = static_cast<float>(in_data[i * in_features + k]) / 1000.0f;
+                    float weight_val = static_cast<float>(weight_data[j * in_features + k]) / 1000.0f;
+                    sum += in_val * weight_val;
+                }
+                
+                if (bias_data) {
+                    float bias_val = static_cast<float>(bias_data[j]) / 1000.0f;
+                    sum += bias_val;
+                }
+                
+                out_data[i * out_features + j] = static_cast<uint16_t>(sum * 1000.0f);
             }
         }
-        reinterpret_cast<uint16_t*>(max_val->data())[0] = max_value;
-        break;
-    }
-    case LLAISYS_DTYPE_I32: {
-        const int32_t* data = reinterpret_cast<const int32_t*>(vals_cpu->data());
-        int32_t max_value = data[0];
-        for (size_t i = 1; i < n; ++i) {
-            if (data[i] > max_value) {
-                max_value = data[i];
-                max_index = i;
-            }
-        }
-        reinterpret_cast<int32_t*>(max_val->data())[0] = max_value;
-        break;
-    }
-    case LLAISYS_DTYPE_I64: {
-        const int64_t* data = reinterpret_cast<const int64_t*>(vals_cpu->data());
-        int64_t max_value = data[0];
-        for (size_t i = 1; i < n; ++i) {
-            if (data[i] > max_value) {
-                max_value = data[i];
-                max_index = i;
-            }
-        }
-        reinterpret_cast<int64_t*>(max_val->data())[0] = max_value;
         break;
     }
     default:
-        throw std::runtime_error("argmax: unsupported data type");
+        throw std::runtime_error("linear: unsupported data type");
     }
-    
-    // 写入索引结果（假设max_idx是int64类型）
-    reinterpret_cast<int64_t*>(max_idx->data())[0] = static_cast<int64_t>(max_index);
 }
 } // namespace llaisys::ops
