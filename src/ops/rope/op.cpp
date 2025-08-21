@@ -1,22 +1,73 @@
 #include "op.hpp"
 
 namespace llaisys::ops {
-// F16 转换函数（与其他文件中相同）
+    
+    
 static float f16_to_float(uint16_t h) {
     union { uint32_t i; float f; } u;
-    u.i = ((h & 0x8000) << 16) | (((h & 0x7c00) + 0x1c000) << 13) | ((h & 0x03ff) << 13);
+    
+    uint32_t sign = (h & 0x8000) << 16;
+    uint32_t exp = (h & 0x7c00);
+    uint32_t mant = (h & 0x03ff);
+    
+    if (exp == 0) {
+        // 零或次正规数
+        if (mant == 0) {
+            u.i = sign;  // 零
+        } else {
+            // 次正规数，转换为正规数
+            exp = 0x1c000;
+            while ((mant & 0x0400) == 0) {
+                mant <<= 1;
+                exp -= 0x0400;
+            }
+            mant &= 0x03ff;
+            u.i = sign | (exp << 13) | (mant << 13);
+        }
+    } else if (exp == 0x7c00) {
+        // 无穷大或NaN
+        u.i = sign | 0x7f800000 | (mant << 13);
+    } else {
+        // 正规数
+        u.i = sign | ((exp + 0x1c000) << 13) | (mant << 13);
+    }
+    
     return u.f;
 }
 
 static uint16_t float_to_f16(float f) {
     union { uint32_t i; float f; } u;
     u.f = f;
+    
     uint32_t i = u.i;
-    uint16_t h = ((i >> 16) & 0x8000) | ((((i & 0x7f800000) - 0x38000000) >> 13) & 0x7c00) | ((i >> 13) & 0x03ff);
-    return h;
+    uint32_t sign = (i >> 16) & 0x8000;
+    int32_t exp = ((i >> 23) & 0xff) - 127 + 15;
+    uint32_t mant = i & 0x007fffff;
+    
+    if (exp <= 0) {
+        if (exp < -10) {
+            // 太小，返回零
+            return (uint16_t)sign;
+        }
+        // 次正规数
+        mant |= 0x00800000;
+        uint32_t shift = 14 - exp;
+        if (shift < 32) {
+            mant >>= shift;
+        } else {
+            mant = 0;
+        }
+        return (uint16_t)(sign | (mant >> 13));
+    } else if (exp >= 31) {
+        // 无穷大
+        return (uint16_t)(sign | 0x7c00);
+    }
+    
+    // 正规数
+    return (uint16_t)(sign | (exp << 10) | (mant >> 13));
 }
 
-// BF16 转换函数
+// BF16 转换函数（这个比较简单，因为 BF16 就是截断的 F32）
 static float bf16_to_float(uint16_t h) {
     union { uint32_t i; float f; } u;
     u.i = ((uint32_t)h) << 16;
@@ -26,8 +77,10 @@ static float bf16_to_float(uint16_t h) {
 static uint16_t float_to_bf16(float f) {
     union { uint32_t i; float f; } u;
     u.f = f;
+    // 简单的截断，可以考虑添加舍入
     return (uint16_t)(u.i >> 16);
 }
+
 
 void rope(tensor_t out, tensor_t in, tensor_t pos_ids, float theta) {
     // 设置设备上下文
