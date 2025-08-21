@@ -1,17 +1,13 @@
 #include "op.hpp"
 
-namespace llaisys::ops {
-// 简化的 F16 转换函数（实际项目中应该使用正确的 IEEE 754 转换）
-float f16_to_float(uint16_t h) {
-    // 这是一个简化的转换，实际应该使用正确的 F16 转换
-    // 这里假设系统有正确的转换函数
+namespace llaisys::ops {// F16 转换函数（与其他文件中相同）
+static float f16_to_float(uint16_t h) {
     union { uint32_t i; float f; } u;
     u.i = ((h & 0x8000) << 16) | (((h & 0x7c00) + 0x1c000) << 13) | ((h & 0x03ff) << 13);
     return u.f;
 }
 
-uint16_t float_to_f16(float f) {
-    // 简化的转换，实际应该使用正确的 F16 转换
+static uint16_t float_to_f16(float f) {
     union { uint32_t i; float f; } u;
     u.f = f;
     uint32_t i = u.i;
@@ -20,13 +16,13 @@ uint16_t float_to_f16(float f) {
 }
 
 // BF16 转换函数
-float bf16_to_float(uint16_t h) {
+static float bf16_to_float(uint16_t h) {
     union { uint32_t i; float f; } u;
     u.i = ((uint32_t)h) << 16;
     return u.f;
 }
 
-uint16_t float_to_bf16(float f) {
+static uint16_t float_to_bf16(float f) {
     union { uint32_t i; float f; } u;
     u.f = f;
     return (uint16_t)(u.i >> 16);
