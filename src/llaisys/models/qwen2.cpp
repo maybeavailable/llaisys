@@ -338,8 +338,19 @@ int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model *model, int64_t *token_i
         return -1;  // Error
     }
     
+    // Check if model is properly initialized
+    if (!model->weights.in_embed || !model->weights.out_embed || !model->x_buf) {
+        // Model weights not loaded or buffers not allocated
+        return -2;  // Model not ready error
+    }
+    
     const auto &meta = model->meta;
     auto &weights = model->weights;
+    
+    // Check sequence length limits
+    if (ntoken > meta.maxseq) {
+        return -3;  // Sequence too long error
+    }
     
     // Update sequence state
     model->seq_len = ntoken;
@@ -446,6 +457,25 @@ int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model *model, int64_t *token_i
     }
     
     return result;
+}
+
+// Check if model is ready for inference
+int llaisysQwen2ModelIsReady(struct LlaisysQwen2Model *model) {
+    if (!model) return 0;
+    
+    // Check essential components
+    if (!model->weights.in_embed || !model->weights.out_embed || 
+        !model->weights.out_norm_w || !model->x_buf || !model->logits_buf) {
+        return 0;  // Not ready
+    }
+    
+    // Check layer weights
+    if (!model->weights.attn_norm_w || !model->weights.attn_q_w || 
+        !model->weights.mlp_norm_w || !model->weights.mlp_gate_w) {
+        return 0;  // Layer weights not ready
+    }
+    
+    return 1;  // Ready
 }
 
 // Additional utility functions (not in the header but useful)

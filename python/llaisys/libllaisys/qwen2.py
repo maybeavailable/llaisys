@@ -80,6 +80,10 @@ def load_qwen2(lib):
     ]
     lib.llaisysQwen2ModelInfer.restype = ctypes.c_int64
 
+    # Function: llaisysQwen2ModelIsReady
+    lib.llaisysQwen2ModelIsReady.argtypes = [LlaisysQwen2Model_p]
+    lib.llaisysQwen2ModelIsReady.restype = ctypes.c_int
+
 
 class Qwen2ModelAPI:
     """Python wrapper for Qwen2 model C API"""
@@ -123,6 +127,13 @@ class Qwen2ModelAPI:
             len(token_ids)
         )
         return int(result)
+
+    def is_ready(self, model: LlaisysQwen2Model_p) -> bool:
+        """Check if model is ready for inference"""
+        if not model:
+            return False
+        result = self.lib.llaisysQwen2ModelIsReady(model)
+        return bool(result)
 
 
 # Global API instance (will be set when library is loaded)

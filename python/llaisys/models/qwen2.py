@@ -222,20 +222,41 @@ class Qwen2:
         if not self.model:
             raise RuntimeError("Model not initialized")
         
+        try:
+            # Check if model is ready for inference
+            is_ready = self.api.is_ready(self.model)
+            if not is_ready:
+                raise RuntimeError("Model not ready for inference - weights may not be loaded")
+        except Exception as e:
+            raise RuntimeError(f"Failed to check model readiness: {e}")
+        
         generated_tokens = list(inputs)
         
         for _ in range(max_new_tokens):
-            # Run inference on current sequence
-            next_token = self.api.infer(self.model, generated_tokens)
-            
-            if next_token < 0:
-                break  # Error occurred
-            
-            generated_tokens.append(next_token)
-            
-            # Check for end token
-            if next_token == self.meta.end_token:
-                break
+            try:
+                # Run inference on current sequence
+                next_token = self.api.infer(self.model, generated_tokens)
+                
+                if next_token < 0:
+                    # Map specific error codes to messages
+                    if next_token == -2:
+                        raise RuntimeError("Model not ready - weights not loaded")
+                    elif next_token == -3:
+                        raise RuntimeError("Input sequence too long")
+                    else:
+                        raise RuntimeError(f"Inference failed with error code: {next_token}")
+                
+                generated_tokens.append(next_token)
+                
+                # Check for end token
+                if next_token == self.meta.end_token:
+                    break
+                    
+            except OSError as e:
+                # Handle Windows C++ exceptions
+                raise RuntimeError(f"C++ runtime error during inference: {e}")
+            except Exception as e:
+                raise RuntimeError(f"Unexpected error during inference: {e}")
         
         return generated_tokens
 
