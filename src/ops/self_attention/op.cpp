@@ -162,7 +162,57 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
         break;
     }
     case LLAISYS_DTYPE_F16: {
-        // F16 处理：转换为 float 进行计算，然后转回 F16
+        const uint16_t* q_data = reinterpret_cast<const uint16_t*>(q->data());
+        const uint16_t* k_data = reinterpret_cast<const uint16_t*>(k->data());
+        const uint16_t* v_data = reinterpret_cast<const uint16_t*>(v->data());
+        uint16_t* out_data = reinterpret_cast<uint16_t*>(attn_val->data());
+        
+        for (size_t i = 0; i < seqlen; ++i) {
+            for (size_t h = 0; h < nhead; ++h) {
+                size_t kv_head = h / heads_per_group;
+                
+                std::vector<float> scores(total_len);
+                for (size_t j = 0; j < total_len; ++j) {
+                    float score = 0.0f;
+                    for (size_t dim = 0; dim < d; ++dim) {
+                        float q_val = static_cast<float>(q_data[i * nhead * d + h * d + dim]) / 1000.0f;
+                        float k_val = static_cast<float>(k_data[j * nkvhead * d + kv_head * d + dim]) / 1000.0f;
+                        score += q_val * k_val;
+                    }
+                    scores[j] = score * scale;
+                }
+                
+                size_t valid_len = std::min(total_len, i + 1);
+                
+                float max_score = scores[0];
+                for (size_t j = 1; j < valid_len; ++j) {
+                    max_score = std::max(max_score, scores[j]);
+                }
+                
+                std::vector<float> attn_weights(total_len, 0.0f);
+                float sum_exp = 0.0f;
+                for (size_t j = 0; j < valid_len; ++j) {
+                    attn_weights[j] = std::exp(scores[j] - max_score);
+                    sum_exp += attn_weights[j];
+                }
+                
+                for (size_t j = 0; j < valid_len; ++j) {
+                    attn_weights[j] /= sum_exp;
+                }
+                
+                for (size_t dim = 0; dim < dv; ++dim) {
+                    float output = 0.0f;
+                    for (size_t j = 0; j < valid_len; ++j) {
+                        float v_val = static_cast<float>(v_data[j * nkvhead * dv + kv_head * dv + dim]) / 1000.0f;
+                        output += attn_weights[j] * v_val;
+                    }
+                    out_data[i * nhead * dv + h * dv + dim] = static_cast<uint16_t>(output * 1000.0f);
+                }
+            }
+        }
+        break;
+    }
+    case LLAISYS_DTYPE_BF16: {
         const uint16_t* q_data = reinterpret_cast<const uint16_t*>(q->data());
         const uint16_t* k_data = reinterpret_cast<const uint16_t*>(k->data());
         const uint16_t* v_data = reinterpret_cast<const uint16_t*>(v->data());

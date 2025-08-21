@@ -70,7 +70,24 @@ void swiglu(tensor_t out, tensor_t gate, tensor_t up) {
         break;
     }
     case LLAISYS_DTYPE_F16: {
-        // F16 处理：转换为 float 进行计算，然后转回 F16
+        const uint16_t* gate_data = reinterpret_cast<const uint16_t*>(gate->data());
+        const uint16_t* up_data = reinterpret_cast<const uint16_t*>(up->data());
+        uint16_t* out_data = reinterpret_cast<uint16_t*>(out->data());
+        
+        for (size_t i = 0; i < total_elements; ++i) {
+            float gate_val = static_cast<float>(gate_data[i]) / 1000.0f;
+            float up_val = static_cast<float>(up_data[i]) / 1000.0f;
+            
+            // 计算 SiLU(gate) = gate / (1 + exp(-gate))
+            float silu = gate_val / (1.0f + std::exp(-gate_val));
+            
+            // 计算 SwiGLU: out = up * SiLU(gate)
+            float result = up_val * silu;
+            out_data[i] = static_cast<uint16_t>(result * 1000.0f);
+        }
+        break;
+    }
+    case LLAISYS_DTYPE_BF16: {
         const uint16_t* gate_data = reinterpret_cast<const uint16_t*>(gate->data());
         const uint16_t* up_data = reinterpret_cast<const uint16_t*>(up->data());
         uint16_t* out_data = reinterpret_cast<uint16_t*>(out->data());

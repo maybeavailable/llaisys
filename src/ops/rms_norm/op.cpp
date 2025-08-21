@@ -88,7 +88,6 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
         break;
     }
     case LLAISYS_DTYPE_F16: {
-        // F16 处理：转换为 float 进行计算，然后转回 F16
         const uint16_t* in_data = reinterpret_cast<const uint16_t*>(in->data());
         const uint16_t* weight_data = reinterpret_cast<const uint16_t*>(weight->data());
         uint16_t* out_data = reinterpret_cast<uint16_t*>(out->data());
@@ -96,7 +95,6 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
         for (size_t i = 0; i < batch_size; ++i) {
             float sum_squares = 0.0f;
             
-            // 计算平方和（转换到float）
             for (size_t j = 0; j < hidden_size; ++j) {
                 float x = static_cast<float>(in_data[i * hidden_size + j]) / 1000.0f;
                 sum_squares += x * x;
@@ -104,7 +102,30 @@ void rms_norm(tensor_t out, tensor_t in, tensor_t weight, float eps) {
             
             float rms = std::sqrt(sum_squares / hidden_size + eps);
             
-            // 应用归一化和权重
+            for (size_t j = 0; j < hidden_size; ++j) {
+                float x = static_cast<float>(in_data[i * hidden_size + j]) / 1000.0f;
+                float w = static_cast<float>(weight_data[j]) / 1000.0f;
+                float result = w * x / rms;
+                out_data[i * hidden_size + j] = static_cast<uint16_t>(result * 1000.0f);
+            }
+        }
+        break;
+    }
+    case LLAISYS_DTYPE_BF16: {
+        const uint16_t* in_data = reinterpret_cast<const uint16_t*>(in->data());
+        const uint16_t* weight_data = reinterpret_cast<const uint16_t*>(weight->data());
+        uint16_t* out_data = reinterpret_cast<uint16_t*>(out->data());
+        
+        for (size_t i = 0; i < batch_size; ++i) {
+            float sum_squares = 0.0f;
+            
+            for (size_t j = 0; j < hidden_size; ++j) {
+                float x = static_cast<float>(in_data[i * hidden_size + j]) / 1000.0f;
+                sum_squares += x * x;
+            }
+            
+            float rms = std::sqrt(sum_squares / hidden_size + eps);
+            
             for (size_t j = 0; j < hidden_size; ++j) {
                 float x = static_cast<float>(in_data[i * hidden_size + j]) / 1000.0f;
                 float w = static_cast<float>(weight_data[j]) / 1000.0f;
