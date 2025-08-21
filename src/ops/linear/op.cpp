@@ -1,6 +1,37 @@
 #include "op.hpp"
 
 namespace llaisys::ops {
+// 简化的 F16 转换函数（实际项目中应该使用正确的 IEEE 754 转换）
+float f16_to_float(uint16_t h) {
+    // 这是一个简化的转换，实际应该使用正确的 F16 转换
+    // 这里假设系统有正确的转换函数
+    union { uint32_t i; float f; } u;
+    u.i = ((h & 0x8000) << 16) | (((h & 0x7c00) + 0x1c000) << 13) | ((h & 0x03ff) << 13);
+    return u.f;
+}
+
+uint16_t float_to_f16(float f) {
+    // 简化的转换，实际应该使用正确的 F16 转换
+    union { uint32_t i; float f; } u;
+    u.f = f;
+    uint32_t i = u.i;
+    uint16_t h = ((i >> 16) & 0x8000) | ((((i & 0x7f800000) - 0x38000000) >> 13) & 0x7c00) | ((i >> 13) & 0x03ff);
+    return h;
+}
+
+// BF16 转换函数
+float bf16_to_float(uint16_t h) {
+    union { uint32_t i; float f; } u;
+    u.i = ((uint32_t)h) << 16;
+    return u.f;
+}
+
+uint16_t float_to_bf16(float f) {
+    union { uint32_t i; float f; } u;
+    u.f = f;
+    return (uint16_t)(u.i >> 16);
+}
+
 void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
     // 设置设备上下文
     core::context().setDevice(in->deviceType(), in->deviceId());
@@ -111,17 +142,17 @@ void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
                 float sum = 0.0f;
                 
                 for (size_t k = 0; k < in_features; ++k) {
-                    float in_val = static_cast<float>(in_data[i * in_features + k]) / 1000.0f;
-                    float weight_val = static_cast<float>(weight_data[j * in_features + k]) / 1000.0f;
+                    float in_val = f16_to_float(in_data[i * in_features + k]);
+                    float weight_val = f16_to_float(weight_data[j * in_features + k]);
                     sum += in_val * weight_val;
                 }
                 
                 if (bias_data) {
-                    float bias_val = static_cast<float>(bias_data[j]) / 1000.0f;
+                    float bias_val = f16_to_float(bias_data[j]);
                     sum += bias_val;
                 }
                 
-                out_data[i * out_features + j] = static_cast<uint16_t>(sum * 1000.0f);
+                out_data[i * out_features + j] = float_to_f16(sum);
             }
         }
         break;
@@ -137,17 +168,17 @@ void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
                 float sum = 0.0f;
                 
                 for (size_t k = 0; k < in_features; ++k) {
-                    float in_val = static_cast<float>(in_data[i * in_features + k]) / 1000.0f;
-                    float weight_val = static_cast<float>(weight_data[j * in_features + k]) / 1000.0f;
+                    float in_val = bf16_to_float(in_data[i * in_features + k]);
+                    float weight_val = bf16_to_float(weight_data[j * in_features + k]);
                     sum += in_val * weight_val;
                 }
                 
                 if (bias_data) {
-                    float bias_val = static_cast<float>(bias_data[j]) / 1000.0f;
+                    float bias_val = bf16_to_float(bias_data[j]);
                     sum += bias_val;
                 }
                 
-                out_data[i * out_features + j] = static_cast<uint16_t>(sum * 1000.0f);
+                out_data[i * out_features + j] = float_to_bf16(sum);
             }
         }
         break;
