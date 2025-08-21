@@ -245,8 +245,8 @@ tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
     const std::vector<ptrdiff_t>& strides = this->strides();
     std::vector<ptrdiff_t> new_strides = strides;
 
-    // 新offset
-    size_t new_offset = _offset + start * strides[dim];
+    // 修复：offset计算 - strides是以元素为单位，需要转换为字节
+    size_t new_offset = _offset + start * strides[dim] * this->elementSize();
 
     TensorMeta new_meta{_meta.dtype, new_shape, new_strides};
     return std::make_shared<Tensor>(new_meta, _storage, new_offset);
